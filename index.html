@@ -20,8 +20,8 @@ h1{font-size:1.6rem;margin:8px 0 2px;letter-spacing:-.01em}
 .sub{color:var(--mut);margin:0 0 18px;font-size:.92rem}
 .box{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
 input,select,button{font:inherit;color:inherit}
-input[type=text],input[type=datetime-local],select{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);margin-bottom:8px}
-.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+input[type=text],input[type=datetime-local],select{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);margin-bottom:10px}
+label{display:block;font-size:.84rem;color:var(--mut);margin:0 0 4px}
 button{border:1px solid var(--bd);background:transparent;border-radius:8px;padding:10px 14px;cursor:pointer}
 button.p{background:var(--pri);color:var(--onp);border-color:var(--pri);font-weight:600;width:100%}
 :focus-visible{outline:3px solid var(--pri);outline-offset:2px}
@@ -32,40 +32,59 @@ li{display:flex;gap:12px;align-items:flex-start;padding:12px 4px;border-bottom:1
 li:last-child{border:0}
 li input{width:22px;height:22px;margin-top:2px;accent-color:var(--pri);flex:none}
 li .t{flex:1;min-width:0;overflow-wrap:anywhere}
+li .t b{font-weight:600}
 li .m{font-size:.84rem;color:var(--mut)}
-li.late .m{color:var(--late);font-weight:600}
+li.late .m.s{color:var(--late);font-weight:600}
 li.done .t b{text-decoration:line-through;color:var(--mut);font-weight:400}
 li .x{border:0;padding:4px 8px;color:var(--mut);font-size:1.2rem;line-height:1}
 h2{font-size:1rem;margin:0 0 4px}
 .empty{color:var(--mut);padding:10px 4px;margin:0}
 .foot{display:flex;gap:8px;flex-wrap:wrap}.foot button{font-size:.88rem}
+summary{cursor:pointer;font-weight:600}
+.sr{display:flex;gap:8px;align-items:center;margin-top:10px}.sr select{margin:0}.sr button{flex:none}
+.ck{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:.95rem;color:var(--tx)}.ck input{width:20px;height:20px;accent-color:var(--pri)}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--pri);color:var(--onp);padding:12px 18px;border-radius:10px;font-weight:600;display:none;max-width:90%;z-index:9}
 </style>
 </head>
 <body>
 <main>
   <h1>Pengingat Saya</h1>
-  <p class="sub">Catat tugas, atur jamnya, dan biarkan aplikasi yang mengingatkan.</p>
+  <p class="sub">Atur target waktu, lalu terima pengingat berkala sampai hari-H.</p>
 
   <div class="box" id="banner">
     <span id="bmsg"></span><button id="bbtn" style="flex:none">Aktifkan notifikasi</button>
   </div>
 
   <form class="box" id="f">
+    <label for="title">Tugas</label>
     <input type="text" id="title" placeholder="Apa yang perlu diingat?" maxlength="200" required autocomplete="off">
-    <div class="row">
-      <input type="datetime-local" id="due" aria-label="Waktu pengingat">
-      <select id="rep" aria-label="Pengulangan">
-        <option value="0">Sekali saja</option>
-        <option value="d">Setiap hari</option>
-        <option value="w">Setiap minggu</option>
-      </select>
-    </div>
+    <label for="due">Target waktu</label>
+    <input type="datetime-local" id="due">
+    <label for="pre">Ingatkan sebelum target</label>
+    <select id="pre">
+      <option value="0">Hanya saat target tiba</option>
+      <option value="d">Setiap hari, pada jam yang sama</option>
+      <option value="w">Setiap minggu, pada hari dan jam yang sama</option>
+    </select>
     <button class="p" type="submit">Tambah tugas</button>
   </form>
 
   <div class="box"><h2>Belum selesai</h2><ul id="act"></ul></div>
   <div class="box"><h2>Selesai</h2><ul id="dn"></ul></div>
+
+  <details class="box">
+    <summary>Bunyi notifikasi</summary>
+    <label class="ck"><input type="checkbox" id="son"> Bunyikan suara saat pengingat muncul</label>
+    <div class="sr">
+      <select id="snd" aria-label="Pilih bunyi">
+        <option value="chime">Lonceng</option>
+        <option value="bell">Dering</option>
+        <option value="beep">Bip</option>
+        <option value="alarm">Alarm</option>
+      </select>
+      <button type="button" id="tst">Tes bunyi</button>
+    </div>
+  </details>
 
   <div class="foot">
     <button id="install" style="display:none">Pasang ke layar utama</button>
@@ -79,20 +98,67 @@ h2{font-size:1rem;margin:0 0 4px}
 
 <script>
 (function(){
-var KEY='pengingat.v1', MS={d:864e5,w:6048e5}, tasks=[];
+var KEY='pengingat.v2',OLD='pengingat.v1',SET='pengingat.set',DAY=864e5,STEP={d:DAY,w:7*DAY};
+var tasks=[],set={on:true,snd:'chime'};
 var $=function(i){return document.getElementById(i)};
 
-function load(){try{tasks=JSON.parse(localStorage.getItem(KEY))||[]}catch(e){tasks=[]}}
+function load(){
+  try{tasks=JSON.parse(localStorage.getItem(KEY))}catch(e){tasks=null}
+  if(!Array.isArray(tasks)){
+    tasks=[];
+    try{(JSON.parse(localStorage.getItem(OLD))||[]).forEach(function(o){
+      tasks.push({id:o.id,title:o.title,due:o.due,pre:null,done:o.done,next:(!o.done&&o.due&&!o.notified)?o.due:null})});
+      if(tasks.length)save()}catch(e){}
+  }
+  try{var s=JSON.parse(localStorage.getItem(SET));if(s)set=s}catch(e){}
+}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(tasks))}catch(e){toast('Data gagal disimpan')}}
+function saveSet(){try{localStorage.setItem(SET,JSON.stringify(set))}catch(e){}}
 function fmt(ms){return new Date(ms).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}
-function toast(t){var el=$('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(function(){el.style.display='none'},5000)}
+function toast(t){var el=$('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(function(){el.style.display='none'},6000)}
 
-function beep(){try{var c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.15;o.start();o.stop(c.currentTime+.4)}catch(e){}}
+/* Waktu notifikasi berikutnya: target dikurangi kelipatan hari/minggu, selalu lebih besar dari "after" */
+function nextAt(t,after){
+  if(!t.due||t.due<=after)return null;
+  var st=STEP[t.pre];if(!st)return t.due;
+  var k=Math.floor((t.due-after-1)/st);
+  return t.due-k*st;
+}
 
-function notify(t,late){
-  var body=t.title+(late?' (terlewat)':'');
-  toast('Pengingat: '+t.title);beep();
-  if(navigator.vibrate)navigator.vibrate([200,100,200]);
+/* Bunyi (dibuat dengan WebAudio, tanpa file tambahan) */
+var ctx;
+var PAT={
+  chime:{w:'sine',v:.35,n:[[880,0,.9],[1175,.16,.9],[1568,.32,1.5]]},
+  bell:{w:'triangle',v:.4,n:[[660,0,1.6],[990,0,1.3],[1320,.02,1],[660,.7,1.6]]},
+  beep:{w:'square',v:.12,n:[[1000,0,.14],[1000,.24,.14],[1000,.48,.14]]},
+  alarm:{w:'sawtooth',v:.14,n:[[700,0,.2],[900,.22,.2],[700,.44,.2],[900,.66,.2],[700,.88,.2],[900,1.1,.2]]}
+};
+function audio(){
+  try{ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();if(ctx.state==='suspended')ctx.resume();return ctx}catch(e){return null}
+}
+function play(name){
+  var c=audio(),p=PAT[name||set.snd]||PAT.chime;if(!c)return;
+  p.n.forEach(function(n){
+    var o=c.createOscillator(),g=c.createGain(),t0=c.currentTime+n[1];
+    o.type=p.w;o.frequency.value=n[0];
+    g.gain.setValueAtTime(0,t0);g.gain.linearRampToValueAtTime(p.v,t0+.02);g.gain.exponentialRampToValueAtTime(.0001,t0+n[2]);
+    o.connect(g);g.connect(c.destination);o.start(t0);o.stop(t0+n[2]+.05);
+  });
+}
+['pointerdown','keydown'].forEach(function(ev){document.addEventListener(ev,function(){audio()},{once:true})});
+
+function msg(t,at,late){
+  var s;
+  if(at>=t.due)s='Sekarang waktunya!';
+  else{var d=Math.round((t.due-at)/DAY);s=(t.pre==='w'&&d%7===0)?(d/7)+' minggu lagi':d+' hari lagi';s+=' (target '+fmt(t.due)+')'}
+  return t.title+' - '+s+(late?' [terlewat]':'');
+}
+
+function notify(t,at,late){
+  var body=msg(t,at,late),final=at>=t.due;
+  toast(body);
+  if(set.on){play();if(final)setTimeout(play,1800)}
+  if(navigator.vibrate)navigator.vibrate(final?[300,150,300,150,300]:[200,100,200]);
   if(window.Notification&&Notification.permission==='granted'){
     var o={body:body,icon:'icon-192.png',tag:t.id,renotify:true,vibrate:[200,100,200]};
     if(navigator.serviceWorker&&navigator.serviceWorker.ready){
@@ -104,28 +170,28 @@ function notify(t,late){
 function check(){
   var now=Date.now(),ch=false;
   tasks.forEach(function(t){
-    if(t.done||!t.due||t.notified||t.due>now)return;
-    notify(t,now-t.due>120000);ch=true;
-    if(t.rep){while(t.due<=now)t.due+=MS[t.rep];t.notified=false}
-    else t.notified=true;
+    if(t.done||!t.next||t.next>now)return;
+    notify(t,t.next,now-t.next>120000);
+    t.next=nextAt(t,now);ch=true;
   });
   if(ch){save();render()}
 }
 
 function item(t){
-  var li=document.createElement('li');
+  var li=document.createElement('li'),now=Date.now();
   if(t.done)li.className='done';
-  else if(t.due&&t.due<Date.now())li.className='late';
+  else if(t.due&&t.due<now)li.className='late';
   var cb=document.createElement('input');cb.type='checkbox';cb.checked=t.done;cb.setAttribute('aria-label','Tandai selesai');
-  cb.onchange=function(){t.done=cb.checked;save();render()};
+  cb.onchange=function(){t.done=cb.checked;t.next=t.done?null:nextAt(t,Date.now());save();render()};
   var d=document.createElement('div');d.className='t';
-  var b=document.createElement('b');b.textContent=t.title;b.style.fontWeight='600';
-  var m=document.createElement('div');m.className='m';
-  var s=t.due?fmt(t.due):'Tanpa pengingat';
-  if(t.rep)s+=' · '+(t.rep==='d'?'harian':'mingguan');
-  if(!t.done&&t.due&&t.due<Date.now()&&!t.rep)s='Terlewat: '+s;
-  m.textContent=s;d.appendChild(b);d.appendChild(m);
-  var x=document.createElement('button');x.className='x';x.textContent='×';x.setAttribute('aria-label','Hapus tugas');
+  var b=document.createElement('b');b.textContent=t.title;d.appendChild(b);
+  function line(txt,cls){var m=document.createElement('div');m.className='m '+(cls||'');m.textContent=txt;d.appendChild(m)}
+  if(t.due){
+    line((t.due<now&&!t.done?'Terlewat: ':'Target: ')+fmt(t.due),'s');
+    if(!t.done&&t.pre)line('Diingatkan '+(t.pre==='d'?'setiap hari':'setiap minggu')+' sebelum target');
+    if(!t.done&&t.next)line('Notifikasi berikutnya: '+fmt(t.next));
+  }else line('Tanpa pengingat');
+  var x=document.createElement('button');x.className='x';x.textContent='\u00d7';x.setAttribute('aria-label','Hapus tugas');
   x.onclick=function(){tasks=tasks.filter(function(k){return k!==t});save();render()};
   li.appendChild(cb);li.appendChild(d);li.appendChild(x);return li;
 }
@@ -153,10 +219,17 @@ $('bbtn').onclick=function(){Notification.requestPermission().then(banner)};
 $('f').onsubmit=function(e){
   e.preventDefault();
   var title=$('title').value.trim();if(!title)return;
-  var v=$('due').value,rep=$('rep').value,due=v?new Date(v).getTime():null;
-  tasks.push({id:String(Date.now())+Math.random().toString(36).slice(2,6),title:title,due:due,rep:due&&rep!=='0'?rep:null,done:false,notified:false});
-  save();render();$('title').value='';$('due').value='';$('rep').value='0';$('title').focus();
+  var v=$('due').value,pre=$('pre').value,due=v?new Date(v).getTime():null;
+  var t={id:String(Date.now())+Math.random().toString(36).slice(2,6),title:title,due:due,pre:due&&pre!=='0'?pre:null,done:false,next:null};
+  t.next=nextAt(t,Date.now());
+  tasks.push(t);save();render();
+  $('title').value='';$('due').value='';$('pre').value='0';$('title').focus();
+  if(due&&due<=Date.now())toast('Target sudah lewat, tidak ada notifikasi yang dijadwalkan');
 };
+
+$('son').onchange=function(){set.on=$('son').checked;saveSet()};
+$('snd').onchange=function(){set.snd=$('snd').value;saveSet();play()};
+$('tst').onclick=function(){play($('snd').value)};
 
 $('clr').onclick=function(){tasks=tasks.filter(function(t){return!t.done});save();render()};
 $('exp').onclick=function(){
@@ -178,7 +251,8 @@ $('install').onclick=function(){if(dip){dip.prompt();dip=null;$('install').style
 
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
 document.addEventListener('visibilitychange',function(){if(!document.hidden){check();render()}});
-load();render();check();setInterval(check,15000);
+load();$('son').checked=set.on!==false;$('snd').value=PAT[set.snd]?set.snd:'chime';
+render();check();setInterval(check,15000);
 })();
 </script>
 </body>
