@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pengingat Saya</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f766e">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{--bg:#f3f1ec;--card:#fffefb;--tx:#1d2a2a;--mut:#667271;--pri:#0f766e;--onp:#fff;--bd:#dcd8cf;--late:#b45309;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#121918;--card:#1b2423;--tx:#e6eeec;--mut:#96a5a2;--pri:#2dd4bf;--onp:#08201d;--bd:#2c3836;--late:#fbbf24}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+main{max-width:560px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.6rem;margin:8px 0 2px;letter-spacing:-.01em}
+.sub{color:var(--mut);margin:0 0 18px;font-size:.92rem}
+.box{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;margin-bottom:14px}
+input,select,button{font:inherit;color:inherit}
+input[type=text],input[type=datetime-local],select{width:100%;padding:11px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);margin-bottom:8px}
+.row{display:flex;gap:8px}.row>*{flex:1;min-width:0}
+button{border:1px solid var(--bd);background:transparent;border-radius:8px;padding:10px 14px;cursor:pointer}
+button.p{background:var(--pri);color:var(--onp);border-color:var(--pri);font-weight:600;width:100%}
+:focus-visible{outline:3px solid var(--pri);outline-offset:2px}
+#banner{display:none;border-left:4px solid var(--late);gap:10px;align-items:center;justify-content:space-between}
+#banner span{font-size:.9rem}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;gap:12px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--bd)}
+li:last-child{border:0}
+li input{width:22px;height:22px;margin-top:2px;accent-color:var(--pri);flex:none}
+li .t{flex:1;min-width:0;overflow-wrap:anywhere}
+li .m{font-size:.84rem;color:var(--mut)}
+li.late .m{color:var(--late);font-weight:600}
+li.done .t b{text-decoration:line-through;color:var(--mut);font-weight:400}
+li .x{border:0;padding:4px 8px;color:var(--mut);font-size:1.2rem;line-height:1}
+h2{font-size:1rem;margin:0 0 4px}
+.empty{color:var(--mut);padding:10px 4px;margin:0}
+.foot{display:flex;gap:8px;flex-wrap:wrap}.foot button{font-size:.88rem}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--pri);color:var(--onp);padding:12px 18px;border-radius:10px;font-weight:600;display:none;max-width:90%;z-index:9}
+</style>
+</head>
+<body>
+<main>
+  <h1>Pengingat Saya</h1>
+  <p class="sub">Catat tugas, atur jamnya, dan biarkan aplikasi yang mengingatkan.</p>
+
+  <div class="box" id="banner">
+    <span id="bmsg"></span><button id="bbtn" style="flex:none">Aktifkan notifikasi</button>
+  </div>
+
+  <form class="box" id="f">
+    <input type="text" id="title" placeholder="Apa yang perlu diingat?" maxlength="200" required autocomplete="off">
+    <div class="row">
+      <input type="datetime-local" id="due" aria-label="Waktu pengingat">
+      <select id="rep" aria-label="Pengulangan">
+        <option value="0">Sekali saja</option>
+        <option value="d">Setiap hari</option>
+        <option value="w">Setiap minggu</option>
+      </select>
+    </div>
+    <button class="p" type="submit">Tambah tugas</button>
+  </form>
+
+  <div class="box"><h2>Belum selesai</h2><ul id="act"></ul></div>
+  <div class="box"><h2>Selesai</h2><ul id="dn"></ul></div>
+
+  <div class="foot">
+    <button id="install" style="display:none">Pasang ke layar utama</button>
+    <button id="exp">Simpan cadangan</button>
+    <button id="imp">Pulihkan cadangan</button>
+    <button id="clr">Hapus yang selesai</button>
+    <input type="file" id="file" accept="application/json" hidden>
+  </div>
+</main>
+<div id="toast" role="status"></div>
+
+<script>
+(function(){
+var KEY='pengingat.v1', MS={d:864e5,w:6048e5}, tasks=[];
+var $=function(i){return document.getElementById(i)};
+
+function load(){try{tasks=JSON.parse(localStorage.getItem(KEY))||[]}catch(e){tasks=[]}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(tasks))}catch(e){toast('Data gagal disimpan')}}
+function fmt(ms){return new Date(ms).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'})}
+function toast(t){var el=$('toast');el.textContent=t;el.style.display='block';clearTimeout(toast.h);toast.h=setTimeout(function(){el.style.display='none'},5000)}
+
+function beep(){try{var c=new (window.AudioContext||window.webkitAudioContext)(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.15;o.start();o.stop(c.currentTime+.4)}catch(e){}}
+
+function notify(t,late){
+  var body=t.title+(late?' (terlewat)':'');
+  toast('Pengingat: '+t.title);beep();
+  if(navigator.vibrate)navigator.vibrate([200,100,200]);
+  if(window.Notification&&Notification.permission==='granted'){
+    var o={body:body,icon:'icon-192.png',tag:t.id,renotify:true,vibrate:[200,100,200]};
+    if(navigator.serviceWorker&&navigator.serviceWorker.ready){
+      navigator.serviceWorker.ready.then(function(r){r.showNotification('Pengingat',o)}).catch(function(){try{new Notification('Pengingat',o)}catch(e){}});
+    }else{try{new Notification('Pengingat',o)}catch(e){}}
+  }
+}
+
+function check(){
+  var now=Date.now(),ch=false;
+  tasks.forEach(function(t){
+    if(t.done||!t.due||t.notified||t.due>now)return;
+    notify(t,now-t.due>120000);ch=true;
+    if(t.rep){while(t.due<=now)t.due+=MS[t.rep];t.notified=false}
+    else t.notified=true;
+  });
+  if(ch){save();render()}
+}
+
+function item(t){
+  var li=document.createElement('li');
+  if(t.done)li.className='done';
+  else if(t.due&&t.due<Date.now())li.className='late';
+  var cb=document.createElement('input');cb.type='checkbox';cb.checked=t.done;cb.setAttribute('aria-label','Tandai selesai');
+  cb.onchange=function(){t.done=cb.checked;save();render()};
+  var d=document.createElement('div');d.className='t';
+  var b=document.createElement('b');b.textContent=t.title;b.style.fontWeight='600';
+  var m=document.createElement('div');m.className='m';
+  var s=t.due?fmt(t.due):'Tanpa pengingat';
+  if(t.rep)s+=' · '+(t.rep==='d'?'harian':'mingguan');
+  if(!t.done&&t.due&&t.due<Date.now()&&!t.rep)s='Terlewat: '+s;
+  m.textContent=s;d.appendChild(b);d.appendChild(m);
+  var x=document.createElement('button');x.className='x';x.textContent='×';x.setAttribute('aria-label','Hapus tugas');
+  x.onclick=function(){tasks=tasks.filter(function(k){return k!==t});save();render()};
+  li.appendChild(cb);li.appendChild(d);li.appendChild(x);return li;
+}
+
+function render(){
+  var a=$('act'),n=$('dn');a.textContent='';n.textContent='';
+  var act=tasks.filter(function(t){return!t.done}).sort(function(p,q){return(p.due||9e15)-(q.due||9e15)});
+  var dn=tasks.filter(function(t){return t.done});
+  act.forEach(function(t){a.appendChild(item(t))});
+  dn.forEach(function(t){n.appendChild(item(t))});
+  if(!act.length)a.innerHTML='<p class="empty">Tidak ada tugas. Tambahkan satu di atas.</p>';
+  if(!dn.length)n.innerHTML='<p class="empty">Belum ada yang selesai.</p>';
+  banner();
+}
+
+function banner(){
+  var b=$('banner'),m=$('bmsg'),k=$('bbtn');
+  if(!window.Notification){b.style.display='flex';m.textContent='Browser ini tidak mendukung notifikasi. Pengingat tampil di dalam aplikasi saja.';k.style.display='none';return}
+  if(Notification.permission==='granted'){b.style.display='none'}
+  else if(Notification.permission==='denied'){b.style.display='flex';m.textContent='Notifikasi diblokir. Aktifkan lewat pengaturan situs di browser.';k.style.display='none'}
+  else{b.style.display='flex';m.textContent='Izinkan notifikasi agar pengingat muncul di layar HP.';k.style.display=''}
+}
+$('bbtn').onclick=function(){Notification.requestPermission().then(banner)};
+
+$('f').onsubmit=function(e){
+  e.preventDefault();
+  var title=$('title').value.trim();if(!title)return;
+  var v=$('due').value,rep=$('rep').value,due=v?new Date(v).getTime():null;
+  tasks.push({id:String(Date.now())+Math.random().toString(36).slice(2,6),title:title,due:due,rep:due&&rep!=='0'?rep:null,done:false,notified:false});
+  save();render();$('title').value='';$('due').value='';$('rep').value='0';$('title').focus();
+};
+
+$('clr').onclick=function(){tasks=tasks.filter(function(t){return!t.done});save();render()};
+$('exp').onclick=function(){
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(tasks)],{type:'application/json'}));
+  a.download='pengingat-cadangan.json';a.click();
+};
+$('imp').onclick=function(){$('file').click()};
+$('file').onchange=function(e){
+  var f=e.target.files[0];if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){try{var d=JSON.parse(r.result);if(!Array.isArray(d))throw 0;tasks=d;save();render();toast('Cadangan dipulihkan')}catch(x){toast('File cadangan tidak valid')}};
+  r.readAsText(f);e.target.value='';
+};
+
+var dip;
+window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();dip=e;$('install').style.display=''});
+$('install').onclick=function(){if(dip){dip.prompt();dip=null;$('install').style.display='none'}};
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(function(){});
+document.addEventListener('visibilitychange',function(){if(!document.hidden){check();render()}});
+load();render();check();setInterval(check,15000);
+})();
+</script>
+</body>
+</html>
